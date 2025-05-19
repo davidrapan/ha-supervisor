@@ -9,6 +9,7 @@ import docker
 import requests
 
 from ..const import (
+    ATTR_ENABLE_IPV6,
     DOCKER_IPV4_NETWORK_MASK,
     DOCKER_IPV4_NETWORK_RANGE,
     DOCKER_IPV6_NETWORK_MASK,
@@ -19,6 +20,7 @@ from ..exceptions import DockerError
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
+DOCKER_ENABLEIPV6 = "EnableIPv6"
 DOCKER_NETWORK_PARAMS = {
     "name": DOCKER_NETWORK,
     "driver": DOCKER_NETWORK_DRIVER,
@@ -32,7 +34,7 @@ DOCKER_NETWORK_PARAMS = {
             ),
         ]
     ),
-    "enable_ipv6": True,
+    ATTR_ENABLE_IPV6: True,
     "options": {"com.docker.network.bridge.name": DOCKER_NETWORK},
 }
 
@@ -43,10 +45,10 @@ class DockerNetwork:
     This class is not AsyncIO safe!
     """
 
-    def __init__(self, docker_client: docker.DockerClient):
+    def __init__(self, docker_client: docker.DockerClient, enable_ipv6: bool = False):
         """Initialize internal Supervisor network."""
         self.docker: docker.DockerClient = docker_client
-        self._network: docker.models.networks.Network = self._get_network()
+        self._network: docker.models.networks.Network = self._get_network(enable_ipv6)
 
     @property
     def name(self) -> str:
@@ -101,17 +103,29 @@ class DockerNetwork:
         """Create a new network."""
         return self.docker.networks.create(**kwargs)
 
-    def _get_network(self) -> docker.models.networks.Network:
+    def _get_network(self, enable_ipv6: bool = False) -> docker.models.networks.Network:
         """Get supervisor network."""
         try:
-            if (network := self._get(DOCKER_NETWORK)).attrs.get("EnableIPv6", False):
+            if (network := self._get(DOCKER_NETWORK)).attrs.get(
+                DOCKER_ENABLEIPV6
+            ) == enable_ipv6:
                 return network
-            network.remove()
-            _LOGGER.info("Migrating Supervisor network to IPv4/IPv6 Dual Stack")
+            try:
+                network.remove()
+                _LOGGER.info(
+                    "Migrating Supervisor network to %s",
+                    "IPv4/IPv6 Dual-Stack" if enable_ipv6 else "IPv4-Only",
+                )
+            except docker.errors.APIError:
+                _LOGGER.info("A supervisor restart is required to apply changes")
+                return network
         except docker.errors.NotFound:
             _LOGGER.info("Can't find Supervisor network, creating a new network")
 
-        return self._create(**DOCKER_NETWORK_PARAMS)
+        network_params = DOCKER_NETWORK_PARAMS.copy()
+        network_params[ATTR_ENABLE_IPV6] = enable_ipv6
+
+        return self._create(**network_params)
 
     def attach_container(
         self,

@@ -789,6 +789,7 @@ class RestAPI(CoreSysAttributes):
         self.webapp.add_routes(
             [
                 web.get("/docker/info", api_docker.info),
+                web.post("/docker/options", api_docker.options),
                 web.get("/docker/registries", api_docker.registries),
                 web.post("/docker/registries", api_docker.create_registry),
                 web.delete("/docker/registries/{hostname}", api_docker.remove_registry),

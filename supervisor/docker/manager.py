@@ -22,6 +22,7 @@ from docker.types.daemon import CancellableStream
 import requests
 
 from ..const import (
+    ATTR_ENABLE_IPV6,
     ATTR_REGISTRIES,
     DNS_SUFFIX,
     DOCKER_NETWORK,
@@ -94,6 +95,11 @@ class DockerConfig(FileConfiguration):
         super().__init__(FILE_HASSIO_DOCKER, SCHEMA_DOCKER_CONFIG)
 
     @property
+    def bridge_ipv6(self) -> bool:
+        """Return configuration for bridge ipv6."""
+        return self._data.get(ATTR_ENABLE_IPV6, False)
+
+    @property
     def registries(self) -> dict[str, Any]:
         """Return credentials for docker registries."""
         return self._data.get(ATTR_REGISTRIES, {})
@@ -124,9 +130,9 @@ class DockerAPI:
                 timeout=900,
             ),
         )
-        self._network = DockerNetwork(self._docker)
         self._info = DockerInfo.new(self.docker.info())
         await self.config.read_data()
+        self._network = DockerNetwork(self._docker, self.config.bridge_ipv6)
         return self
 
     @property
